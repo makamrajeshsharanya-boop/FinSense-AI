@@ -1,0 +1,1040 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FinSense AI: Financial Inclusion Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f7f9;
+        }
+        /* Custom Scrollbar for Chat */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background-color: #f1f5f9;
+        }
+        /* Style for inputs to match the card theme */
+        .financial-input {
+            width: 100%;
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 1.125rem; /* text-xl */
+            font-weight: 700; /* font-bold */
+            transition: border-color 0.2s, box-shadow 0.2s;
+            text-align: right;
+        }
+        .financial-input:focus {
+            outline: none;
+            border-color: #4f46e5; /* indigo-600 */
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5); /* indigo-500 shadow */
+        }
+        /* Animation for listening mic button */
+        .animate-pulse-fast {
+            animation: pulse-fast 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col md:flex-row">
+    <!-- Main Application Container -->
+    <div id="app" class="flex flex-col md:flex-row w-full">
+        <!-- Sidebar Navigation (to be rendered by JS) -->
+        <nav id="sidebar" class="bg-white w-full md:w-64 flex-shrink-0 border-b md:border-r border-gray-200 p-4 md:p-6 shadow-lg md:shadow-none"></nav>
+
+        <!-- Main Content Area -->
+        <main id="main-content" class="flex-1 p-6 md:p-10 overflow-y-auto"></main>
+    </div>
+
+    <script>
+        // --- Global Configuration & Data Structures ---
+        const APP_NAME = "FinSense AI";
+        const USER_ID = "NEXTBIL-938210-USER";
+
+        // Mock User Data for Dashboard and Credit Scoring Simulation
+        let userData = {
+            // These are now the input variables the user controls
+            income: 25000, // Monthly Income
+            savings: 7500, // Total Savings
+            largestExpense: 10000, // Largest Monthly Expense (for expense concentration)
+            
+            // Simulation data used for the Alternative Credit Score
+            upiTransactions: 85, // High frequency
+            utilityPayments: 'consistent', // Consistent
+            digitalFootprintYears: 3, // Long-term
+            riskProfile: 'Medium-Low', // Simulated risk profile
+            kycStatus: 'Verified with Digital Footprint',
+        };
+
+        const LESSONS_DATA = Array.from({ length: 30 }, (_, i) => ({
+            id: i + 1,
+            title: `Lesson ${i + 1}: ${
+                i < 5 ? `Budgeting Basics & Goal Setting` :
+                i < 10 ? `Understanding Credit Scores & Loans` :
+                i < 15 ? `The Power of Saving & Compounding` :
+                i < 20 ? `Introduction to Digital Payments (UPI)` :
+                i < 25 ? `Identifying Financial Scams & Fraud` :
+                `Investment Fundamentals & Risk`
+            }`,
+            explanation: `This is a comprehensive explanation for Lesson ${i + 1}. It details ${
+                i < 5 ? 'how to track expenses and set SMART financial goals.' :
+                i < 10 ? 'the components of an Alternative Credit Score and how loan interest (EMI) works.' :
+                i < 15 ? 'the difference between simple and compound interest, and techniques for automated savings.' :
+                i < 20 ? 'the security and convenience of using digital payment systems like UPI.' :
+                i < 25 ? 'common phishing tactics and KYC fraud prevention, including scenarios relevant to rural users.' :
+                'basic concepts like mutual funds, stocks, and diversifying your portfolio. This lesson simplifies complex terms like "Systematic Investment Plan (SIP)".'
+            }`,
+            quiz: {
+                question: `What is the key takeaway from Lesson ${i + 1}?`,
+                options: [
+                    { text: `The core financial concept introduced in this lesson.`, isCorrect: true },
+                    { text: "A distracting, incorrect financial term.", isCorrect: false },
+                    { text: "A general, non-specific life advice.", isCorrect: false },
+                ]
+            }
+        }));
+
+        const VIEWS = {
+            DASHBOARD: 'Dashboard',
+            CREDIT: 'Alternative Credit Score',
+            MENTOR: 'AI Financial Mentor',
+            LITERACY: 'Financial Literacy & Gamification',
+            RISK: 'Fraud Detection & Risk Intelligence',
+            API: 'Open Banking & SaaS Layer',
+        };
+        
+        // --- Web Speech API Configuration ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const synth = window.speechSynthesis;
+        let recognition = null;
+        let currentUtterance = null;
+        
+        const VOICE_LANGS = [
+            { code: 'en-IN', name: 'English (India)', voiceName: 'Google US English' },
+            { code: 'hi-IN', name: 'Hindi (भारत)', voiceName: 'Google हिन्दी' },
+        ];
+
+
+        // --- Application State ---
+        let state = {
+            currentView: VIEWS.DASHBOARD,
+            chatHistory: [{ role: 'model', message: "Hello! I am your FinSense AI Mentor. Ask me anything about loans, EMI, or saving!" }],
+            literacy: {
+                selectedLessonId: LESSONS_DATA[0].id,
+                quizCompleted: false,
+                correctAnswer: null,
+                score: 0,
+            },
+            voice: {
+                recognitionLanguage: 'en-IN', // Default to English (India)
+                isListening: false,
+            }
+        };
+
+        // --- Helper Functions (Simulated ML/XAI Logic) ---
+
+        /** Simulates the Alternative Credit Scoring Engine (1.1). Note: This score is independent of the direct input values (income/savings) to simulate using ONLY alternative data. */
+        const simulateCreditScore = (data) => {
+            // UPI Pattern: High frequency, low value transactions (Good)
+            const patternScore = data.upiTransactions > 50 ? 300 : data.upiTransactions > 20 ? 150 : 50;
+            // Digital Spending: Consistent utility payments (Good)
+            const utilityScore = data.utilityPayments === 'consistent' ? 250 : 100;
+            // Mobile Usage: Long-term digital footprint (Good)
+            const digitalFootprintScore = data.digitalFootprintYears > 2 ? 150 : 50;
+
+            const totalScore = patternScore + utilityScore + digitalFootprintScore;
+            const finalScore = Math.min(850, Math.max(300, totalScore));
+
+            const explanation = [
+                "**Transaction Stability (300 points):** You show high UPI transaction frequency and stable micro-payment behavior, which is a strong indicator of reliable cash flow.",
+                "**Utility Consistency (250 points):** Your utility bills are paid consistently and on time (based on SMS metadata analysis), demonstrating financial discipline.",
+                "**Digital Footprint Age (150 points):** A long-standing, active digital history reduces uncertainty and proves long-term engagement with the formal system."
+            ].join('\n\n');
+
+            return { score: finalScore, explanation };
+        };
+
+        /** Simulates Financial Health Index calculation (2.2) */
+        const calculateFHI = (data) => {
+            const income = data.income || 1; // Prevent division by zero
+            const largestExpense = data.largestExpense || 0;
+            const savings = data.savings || 0;
+
+            // Score 1: Savings Rate (Savings divided by Income, capped at a good rate, e.g., 20% savings)
+            // Weight 1: 50%
+            const idealSavingsRatio = 0.2;
+            let savingsRatio = savings / income;
+            savingsRatio = Math.min(idealSavingsRatio, savingsRatio);
+
+            // Scale the ratio to 50 points (e.g., 20% ratio -> 50 points)
+            const savingsScore = Math.round((savingsRatio / idealSavingsRatio) * 50);
+
+
+            // Score 2: Expense Concentration (Largest expense as a % of income)
+            // Lower concentration is better. High score for low concentration.
+            // Weight 2: 50%
+            const maxConcentrationThreshold = 0.5; // If one expense is 50% of income, score is 0.
+            const concentrationRatio = largestExpense / income;
+            let concentrationScore;
+
+            if (concentrationRatio > maxConcentrationThreshold) {
+                concentrationScore = 0;
+            } else {
+                // As ratio goes from 0 to 0.5, score goes from 50 to 0
+                concentrationScore = Math.round(50 * (1 - (concentrationRatio / maxConcentrationThreshold)));
+            }
+            concentrationScore = Math.max(0, concentrationScore);
+
+
+            return Math.round(savingsScore + concentrationScore);
+        };
+
+        // Initialize scores
+        let currentCreditScore = simulateCreditScore(userData).score;
+        let creditExplanation = simulateCreditScore(userData).explanation;
+
+        // --- LLM API Call Implementation (3.1) ---
+        const callGeminiApi = async (userPrompt) => {
+            const mentorContent = document.getElementById('mentor-content');
+            const sendButton = document.getElementById('send-button');
+            const inputArea = document.getElementById('chat-input');
+            const voiceStatus = document.getElementById('voice-status');
+
+            sendButton.disabled = true;
+            inputArea.disabled = true;
+            voiceStatus.textContent = "Processing response...";
+            
+            // Stop any ongoing speech
+            stopSpeaking();
+
+            let loadingMessage = document.createElement('div');
+            loadingMessage.className = 'flex justify-start';
+            loadingMessage.innerHTML = `
+                <div class="max-w-xs md:max-w-md p-3 rounded-xl bg-white text-gray-500 text-sm shadow-md rounded-tl-none border border-gray-100">
+                    <span class="animate-pulse">Mentor is typing...</span>
+                </div>
+            `;
+            mentorContent.appendChild(loadingMessage);
+            mentorContent.scrollTop = mentorContent.scrollHeight;
+
+            const systemPrompt = `You are "FinSense Mentor," a friendly and empathetic AI financial guide. Your primary goal is to simplify complex financial concepts (like EMI, loans, budgeting, UPI, investment) using local, easy-to-understand language, suitable for users who are new to formal finance. Keep your responses concise, helpful, and encouraging. Respond in the language of the user's prompt (English or Hindi). Never ask for personal data.`;
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            const history = state.chatHistory.slice(1).map(msg => ({
+                role: msg.role === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.message }]
+            }));
+
+            const payload = {
+                contents: [
+                    ...history,
+                    { role: 'user', parts: [{ text: userPrompt }] }
+                ],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            let generatedText = "Sorry, I couldn't process that request right now. Please try again.";
+
+            try {
+                let response;
+                // Exponential backoff retry logic (simplified)
+                for (let i = 0; i < 3; i++) {
+                    response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.ok) break;
+                    if (i < 2) await new Promise(res => setTimeout(res, 2 ** i * 1000));
+                }
+
+                const result = await response.json();
+                generatedText = result?.candidates?.[0]?.content?.parts?.[0]?.text || generatedText;
+
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                generatedText = "An error occurred while connecting to the mentor. Check your network.";
+            } finally {
+                // Remove loading message and update history
+                mentorContent.removeChild(loadingMessage);
+
+                state.chatHistory.push({ role: 'model', message: generatedText });
+
+                // Re-render chat to display the new message
+                renderMentor();
+
+                // Speak the response aloud
+                speakResponse(generatedText);
+
+                sendButton.disabled = false;
+                inputArea.disabled = false;
+                inputArea.focus();
+                voiceStatus.textContent = "Ready to listen or type.";
+            }
+        };
+
+        // --- Voice Assistant Functions ---
+
+        /** Stops any ongoing speech synthesis */
+        function stopSpeaking() {
+            if (synth && synth.speaking) {
+                synth.cancel();
+            }
+        }
+
+        /** Converts text to speech using the selected language voice */
+        function speakResponse(text) {
+            stopSpeaking();
+            
+            if (!synth) {
+                console.error("Speech Synthesis not supported in this browser.");
+                return;
+            }
+
+            const langCode = state.voice.recognitionLanguage;
+            const langConfig = VOICE_LANGS.find(l => l.code === langCode);
+            
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = langCode;
+
+            // Find a suitable voice. This depends on browser installed voices.
+            const voices = synth.getVoices();
+            const voice = voices.find(v => v.lang.startsWith(langCode.substring(0, 2)) || v.name.includes(langConfig.voiceName));
+            
+            if (voice) {
+                utterance.voice = voice;
+            } else {
+                console.warn(`Voice for ${langConfig.name} not found, using default.`);
+            }
+
+            currentUtterance = utterance; // Store to cancel if needed
+            synth.speak(utterance);
+        }
+
+        /** Starts the speech recognition process */
+        function startListening() {
+            if (!SpeechRecognition) {
+                const voiceStatus = document.getElementById('voice-status');
+                voiceStatus.textContent = "Voice input is not supported by your browser.";
+                return;
+            }
+
+            if (state.voice.isListening) {
+                recognition.stop();
+                return;
+            }
+            
+            stopSpeaking();
+
+            try {
+                recognition = new SpeechRecognition();
+                recognition.continuous = false;
+                recognition.interimResults = false;
+                recognition.lang = state.voice.recognitionLanguage;
+
+                const voiceStatus = document.getElementById('voice-status');
+                const micButton = document.getElementById('mic-button');
+                const inputArea = document.getElementById('chat-input');
+                
+                recognition.onstart = () => {
+                    setAppState({ voice: { ...state.voice, isListening: true } });
+                    micButton.classList.add('animate-pulse-fast');
+                    micButton.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    micButton.classList.add('bg-red-700');
+                    voiceStatus.textContent = `Listening... Speak in ${VOICE_LANGS.find(l => l.code === state.voice.recognitionLanguage).name}.`;
+                    inputArea.placeholder = "Listening...";
+                    inputArea.disabled = true;
+                };
+
+                recognition.onresult = (event) => {
+                    const transcript = event.results[0][0].transcript;
+                    document.getElementById('chat-input').value = transcript;
+                    voiceStatus.textContent = `Transcribed: "${transcript}". Sending...`;
+                    
+                    // Automatically send the message
+                    handleMentorSend(true);
+                };
+
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error', event.error);
+                    voiceStatus.textContent = `Error: ${event.error}. Click mic to try again.`;
+                };
+
+                recognition.onend = () => {
+                    setAppState({ voice: { ...state.voice, isListening: false } });
+                    micButton.classList.remove('animate-pulse-fast', 'bg-red-700');
+                    micButton.classList.add('bg-red-500', 'hover:bg-red-600');
+                    inputArea.placeholder = "Ask about EMI, loans, or savings...";
+                    inputArea.disabled = false;
+                    
+                    if (!document.getElementById('chat-input').value) {
+                         voiceStatus.textContent = "Ready to listen or type.";
+                    }
+                };
+
+                recognition.start();
+            } catch (e) {
+                console.error("Recognition Start Error:", e);
+                const voiceStatus = document.getElementById('voice-status');
+                voiceStatus.textContent = "Could not start voice assistant. Check microphone permissions.";
+            }
+        }
+
+        // --- Core Rendering Logic ---
+
+        /** Sets the state and re-renders the UI */
+        function setAppState(newState) {
+            state = { ...state, ...newState };
+            renderUI();
+        }
+
+        /** Renders the Card component structure */
+        function renderCard(title, iconHtml, contentHtml, className = '') {
+            return `
+                <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-100 transition-shadow duration-300 hover:shadow-xl ${className}">
+                    <div class="flex items-center space-x-3 mb-4">
+                        ${iconHtml}
+                        <h2 class="text-xl font-semibold text-gray-800">${title}</h2>
+                    </div>
+                    ${contentHtml}
+                </div>
+            `;
+        }
+
+        /** Handles input changes and updates userData */
+        function handleInputUpdate(e) {
+            const field = e.target.id;
+            const value = parseFloat(e.target.value) || 0;
+
+            if (field === 'input-income') {
+                userData.income = value;
+            } else if (field === 'input-savings') {
+                userData.savings = value;
+            } else if (field === 'input-expense') {
+                userData.largestExpense = value;
+            }
+
+            // Re-render the dashboard to update the FHI, insights, and other metrics
+            renderMainContent();
+        }
+
+
+        /** Renders the Smart Personal Finance Dashboard (2.1, 2.2, 2.3) */
+        function renderDashboard() {
+            const currentFHI = calculateFHI(userData);
+
+            // Input Card Templates
+            const inputCard = (id, label, icon, value) => renderCard(
+                label,
+                `<i data-lucide="${icon}" class="w-6 h-6 text-indigo-600"></i>`,
+                `
+                <label for="${id}" class="text-sm text-gray-500 block mb-1">Enter Monthly Value (₹)</label>
+                <input
+                    type="number"
+                    id="${id}"
+                    value="${value}"
+                    min="0"
+                    class="financial-input text-indigo-600"
+                    oninput="handleInputUpdate(event)"
+                >
+                `,
+                'md:col-span-1'
+            );
+
+            const incomeCard = inputCard('input-income', 'Monthly Income', 'wallet', userData.income);
+            const savingsCard = inputCard('input-savings', 'Total Savings', 'banknote', userData.savings);
+            const expenseCard = inputCard('input-expense', 'Largest Monthly Expense', 'shopping-cart', userData.largestExpense);
+
+            // FHI Card Calculation
+            const fhiColor = currentFHI >= 70 ? 'text-green-600' : currentFHI >= 50 ? 'text-yellow-600' : 'text-red-600';
+            const fhiBadge = currentFHI >= 70 ? 'bg-green-100 text-green-800' : currentFHI >= 50 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+            const fhiText = currentFHI >= 70 ? 'Excellent' : currentFHI >= 50 ? 'Good' : 'Needs Attention';
+            const fhiTip = currentFHI >= 70 ? 'Keep up the great work!' : currentFHI >= 50 ? 'Small improvements in savings or expense control can boost this score.' : 'Focus on increasing savings and minimizing concentrated high-value expenses.';
+
+            const fhiCard = renderCard(
+                "Financial Health Index (FHI)",
+                '<i data-lucide="gauge" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <div class="text-center">
+                    <div class="text-6xl font-extrabold ${fhiColor}">${currentFHI}</div>
+                    <p class="text-sm mt-2 text-gray-500">Based on your input and financial behavior.</p>
+                    <span class="inline-block mt-4 px-3 py-1 text-xs font-semibold rounded-full ${fhiBadge}">
+                        ${fhiText}
+                    </span>
+                    <p class="text-xs text-gray-500 mt-4">${fhiTip}</p>
+                </div>
+                `,
+                "md:col-span-3"
+            );
+
+            // AI Insights Card (using the newly calculated metrics)
+            const savingsRatio = ((userData.savings / (userData.income || 1)) * 100).toFixed(1);
+            const expenseConcentration = ((userData.largestExpense / (userData.income || 1)) * 100).toFixed(1);
+
+            const insightsCard = renderCard(
+                "AI Financial Insights",
+                '<i data-lucide="zap" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <ul class="list-disc list-inside space-y-2 text-sm text-gray-700">
+                    <li><span class="font-semibold text-green-600">Savings Rate:</span> Your savings represent ${savingsRatio}% of your monthly income.</li>
+                    <li><span class="font-semibold ${expenseConcentration > 30 ? 'text-red-600' : 'text-green-600'}">Expense Risk:</span> Your largest expense is ${expenseConcentration}% of your income.</li>
+                    <li><span class="font-semibold text-indigo-600">Credit Tip:</span> Your alternative credit score is currently ${currentCreditScore} due to strong digital payment consistency.</li>
+                    <li><span class="font-semibold text-gray-600">Recommendation:</span> Based on your FHI of ${currentFHI}, consider exploring lesson 15 on compounding interest.</li>
+                </ul>
+                `,
+                "md:col-span-3"
+            );
+
+
+            return `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    ${incomeCard}
+                    ${savingsCard}
+                    ${expenseCard}
+                    ${fhiCard}
+                    ${insightsCard}
+                </div>
+            `;
+        }
+
+        /** Renders the Alternative Credit Scoring View (1.1, 1.2) */
+        function renderCreditScore() {
+            const scoreColor = currentCreditScore >= 700 ? 'text-green-600' : currentCreditScore >= 550 ? 'text-yellow-600' : 'text-red-600';
+
+            const scoreCard = renderCard(
+                "Alternative Credit Score",
+                '<i data-lucide="trending-up" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <div class="text-center">
+                    <div class="text-7xl font-extrabold ${scoreColor}">${currentCreditScore}</div>
+                    <p class="text-lg mt-2 text-gray-600">Calculated using non-traditional data (UPI, digital history)</p>
+                </div>
+                `,
+                "lg:col-span-1"
+            );
+
+            // Convert markdown-style bold into HTML for explanation
+            const explanationHtml = creditExplanation.split('\n\n').map((point) => {
+                const htmlPoint = point.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                return `
+                    <div class="flex items-start">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-indigo-500 mr-3 mt-1 flex-shrink-0"></i>
+                        <div class="text-gray-700">${htmlPoint}</div>
+                    </div>
+                `;
+            }).join('');
+
+            const xaiCard = renderCard(
+                "Explainable AI (XAI) Output",
+                '<i data-lucide="zap" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <p class="text-gray-500 mb-4">Understanding your score—Why this score?</p>
+                <div class="space-y-4 text-sm">
+                    ${explanationHtml}
+                </div>
+                `,
+                "lg:col-span-2"
+            );
+
+            return `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    ${scoreCard}
+                    ${xaiCard}
+                </div>
+            `;
+        }
+
+        /** Renders the AI Financial Mentor / Chatbot View (3.1) */
+        function renderMentor() {
+            const chatContent = state.chatHistory.map((msg, index) => {
+                const isUser = msg.role === 'user';
+                return `
+                    <div class="flex ${isUser ? 'justify-end' : 'justify-start'}">
+                        <div class="max-w-xs md:max-w-md p-3 rounded-xl shadow-md text-sm ${
+                            isUser
+                                ? 'bg-indigo-600 text-white rounded-br-none'
+                                : 'bg-white text-gray-800 rounded-tl-none border border-gray-100'
+                        }">
+                            <p>${msg.message}</p>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            const selectedLang = state.voice.recognitionLanguage;
+
+            const mentorHtml = `
+                <p class="text-sm text-gray-500 mb-4">Your personal guide for simplifying loans, EMI, and investment concepts. Supports English and Hindi voice commands.</p>
+                <div class="flex flex-col h-[60vh] max-h-[600px] bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                    <!-- Chat History -->
+                    <div id="mentor-content" class="flex-1 p-4 overflow-y-auto space-y-4 custom-scrollbar">
+                        ${chatContent}
+                    </div>
+
+                    <!-- Input Area -->
+                    <div class="p-4 border-t border-gray-200 flex items-center space-x-3">
+                        
+                        <!-- Language Selector -->
+                        <select id="voice-lang-select" class="p-3 border border-gray-300 rounded-lg text-sm bg-white font-medium focus:ring-indigo-500 focus:border-indigo-500 w-1/4 min-w-[100px]" onchange="handleLanguageChange(event)">
+                            ${VOICE_LANGS.map(lang => `
+                                <option value="${lang.code}" ${lang.code === selectedLang ? 'selected' : ''}>${lang.name}</option>
+                            `).join('')}
+                        </select>
+                        
+                        <!-- Microphone Button -->
+                        <button id="mic-button" 
+                            class="bg-red-500 text-white p-3 rounded-lg shadow-md hover:bg-red-600 transition-colors flex-shrink-0 
+                                ${state.voice.isListening ? 'animate-pulse-fast bg-red-700' : ''}" 
+                            aria-label="Start Voice Input"
+                            onclick="startListening()">
+                            <i data-lucide="mic" class="w-6 h-6"></i>
+                        </button>
+
+                        <!-- Text Input Area -->
+                        <textarea
+                            id="chat-input"
+                            placeholder="Ask about EMI, loans, or savings..."
+                            class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 resize-none text-sm"
+                            rows="2"
+                        ></textarea>
+                        <button id="send-button" class="bg-indigo-600 text-white p-3 rounded-lg shadow-md hover:bg-indigo-700 transition-colors disabled:bg-indigo-300" aria-label="Send Message">
+                            <i data-lucide="chevron-right" class="w-6 h-6"></i>
+                        </button>
+                    </div>
+                    <!-- Status Display -->
+                    <div id="voice-status" class="text-sm text-center pt-1 pb-2 text-gray-500">Ready to listen or type.</div>
+                </div>
+            `;
+
+            return renderCard(
+                "AI Financial Mentor",
+                '<i data-lucide="bot" class="w-6 h-6 text-indigo-600"></i>',
+                mentorHtml
+            );
+        }
+        
+        /** Handles manual text send or voice-triggered send */
+        function handleMentorSend(isVoice = false) {
+            const inputArea = document.getElementById('chat-input');
+            const message = inputArea.value.trim();
+
+            if (message === '') return;
+
+            inputArea.value = '';
+            state.chatHistory.push({ role: 'user', message: message });
+            renderMentor(); // Quick re-render to show user message immediately
+
+            // Scroll to bottom
+            const mentorContent = document.getElementById('mentor-content');
+            setTimeout(() => {
+                if (mentorContent) mentorContent.scrollTop = mentorContent.scrollHeight;
+            }, 0);
+
+            callGeminiApi(message);
+        }
+
+        /** Handles change in the language dropdown */
+        function handleLanguageChange(event) {
+            const newLang = event.target.value;
+            setAppState({ voice: { ...state.voice, recognitionLanguage: newLang } });
+            stopSpeaking();
+        }
+
+        /** Renders the Financial Literacy Gamification View (6.1) */
+        function renderLiteracy() {
+            const selectedLesson = LESSONS_DATA.find(l => l.id === state.literacy.selectedLessonId);
+
+            // Lesson List Sidebar
+            const lessonList = LESSONS_DATA.map(lesson => {
+                const isSelected = lesson.id === selectedLesson.id;
+                return `
+                    <button data-lesson-id="${lesson.id}" class="lesson-button w-full text-left p-3 rounded-lg transition-all text-sm flex justify-between items-center ${
+                        isSelected
+                            ? 'bg-indigo-100 text-indigo-700 font-bold'
+                            : 'text-gray-600 hover:bg-gray-50'
+                    }">
+                        <span>${lesson.title}</span>
+                        ${lesson.id <= state.literacy.score ? '<i data-lucide="gift" class="w-5 h-5 text-green-500"></i>' : '<i data-lucide="chevron-right" class="w-4 h-4 text-gray-400"></i>'}
+                    </button>
+                `;
+            }).join('');
+
+            const lessonSidebar = `
+                <div class="lg:col-span-1 bg-white p-4 rounded-xl shadow-lg border border-gray-100 overflow-y-auto max-h-[85vh]">
+                    <h2 class="text-xl font-semibold text-gray-800 flex items-center mb-4">
+                        <i data-lucide="graduation-cap" class="w-5 h-5 mr-2 text-yellow-600"></i> 30 Literacy Modules
+                    </h2>
+                    <p class="text-sm text-gray-500 mb-4 flex items-center">
+                        <i data-lucide="gift" class="w-4 h-4 mr-1 text-indigo-600"></i>
+                        Points Earned: <span class="font-bold ml-1">${state.literacy.score} / 30</span>
+                    </p>
+                    <div class="space-y-1">
+                        ${lessonList}
+                    </div>
+                </div>
+            `;
+
+            // Quiz Section
+            let quizFeedback = '';
+            let quizButtonHtml = '';
+
+            if (state.literacy.quizCompleted) {
+                if (state.literacy.correctAnswer) {
+                    quizFeedback = `
+                        <div class="mt-4 p-4 rounded-lg bg-green-100 text-green-700 flex items-center">
+                            <i data-lucide="check-circle" class="w-5 h-5 mr-2"></i>
+                            <span class="font-semibold">Correct!</span> You earned a reward point.
+                        </div>
+                    `;
+                    // Button to move to next lesson
+                    if (selectedLesson.id < LESSONS_DATA.length) {
+                        quizButtonHtml = `<button data-action="next-lesson" class="mt-4 w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center">Next Lesson <i data-lucide="chevron-right" class="w-5 h-5 ml-2"></i></button>`;
+                    } else {
+                        quizButtonHtml = `<div class="mt-4 text-center text-indigo-600 font-semibold">Congratulations! All lessons completed.</div>`;
+                    }
+                } else {
+                    quizFeedback = `
+                        <div class="mt-4 p-4 rounded-lg bg-red-100 text-red-700 flex items-center">
+                            <i data-lucide="x-circle" class="w-5 h-5 mr-2"></i>
+                            <span class="font-semibold">Incorrect.</span> Please review the lesson and try again.
+                        </div>
+                    `;
+                    quizButtonHtml = `<button data-action="review-lesson" class="mt-4 w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">Review Lesson</button>`;
+                }
+            } else {
+                // Render quiz options
+                quizButtonHtml = selectedLesson.quiz.options.map((option, idx) => `
+                    <button data-quiz-answer="${option.isCorrect}" class="quiz-answer-button mt-3 w-full text-left p-4 border border-gray-200 rounded-lg hover:bg-indigo-50 transition-colors bg-white shadow-sm text-gray-700">
+                        <span class="font-bold mr-2">${String.fromCharCode(65 + idx)}.</span> ${option.text}
+                    </button>
+                `).join('');
+            }
+
+            const lessonContentCard = renderCard(
+                selectedLesson.title,
+                '<i data-lucide="clock" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <!-- Explanation -->
+                <h3 class="text-lg font-semibold text-gray-700 mt-2 mb-2">Detailed Explanation</h3>
+                <p class="text-gray-600 mb-6">${selectedLesson.explanation}</p>
+
+                <!-- Quiz -->
+                <div class="mt-8 pt-6 border-t border-gray-200">
+                    <h3 class="text-xl font-bold text-indigo-700 mb-4">Quiz Zone: Earn Rewards!</h3>
+                    <p class="text-lg font-semibold mb-3">${selectedLesson.quiz.question}</p>
+                    <div id="quiz-options">
+                        ${state.literacy.quizCompleted ? '' : quizButtonHtml}
+                    </div>
+                    ${quizFeedback}
+                    ${state.literacy.quizCompleted ? quizButtonHtml : ''}
+                </div>
+                `,
+                "lg:col-span-2"
+            );
+
+            return `
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                    ${lessonSidebar}
+                    ${lessonContentCard}
+                </div>
+            `;
+        }
+
+        /** Renders Fraud Detection & Risk Intelligence (4.1) */
+        function renderRisk() {
+            const riskInsights = [
+                { title: "KYC Verification Status", detail: userData.kycStatus, status: 'Success', icon: 'shield' },
+                { title: "Anomaly Detection (Last 7 Days)", detail: "Zero unusual spending spikes identified.", status: 'Success', icon: 'check-circle' },
+                { title: "Money Laundering Pattern Check", detail: "No high-risk pattern match found. All good.", status: 'Success', icon: 'check-circle' },
+                { title: "Geographic Risk Profile", detail: `User's location history matches stated residence. Risk: ${userData.riskProfile}.`, status: 'Warning', icon: 'alert-triangle' },
+                { title: "Blockchain/Zero-Knowledge Proofs", detail: "Concept: Data integrity layer ensures privacy and tamper-proofing.", status: 'Info', icon: 'lock' },
+            ];
+
+            const riskContent = riskInsights.map(item => `
+                <div class="flex items-center justify-between p-4 border-b last:border-b-0">
+                    <div class="flex items-center">
+                        <i data-lucide="${item.icon}" class="w-5 h-5 mr-3 ${item.status === 'Success' ? 'text-green-500' : item.status === 'Warning' ? 'text-yellow-500' : 'text-indigo-500'}"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">${item.title}</p>
+                            <p class="text-sm text-gray-500">${item.detail}</p>
+                        </div>
+                    </div>
+                    <span class="px-3 py-1 text-xs font-semibold rounded-full ${item.status === 'Success' ? 'bg-green-100 text-green-800' : item.status === 'Warning' ? 'bg-yellow-100 text-yellow-800' : 'bg-indigo-100 text-indigo-800'}">
+                        ${item.status}
+                    </span>
+                </div>
+            `).join('');
+
+            return renderCard(
+                "Fraud Detection & Risk Intelligence",
+                '<i data-lucide="shield" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <p class="text-gray-600 mb-6">Real-time AI monitoring for suspicious patterns, fake KYC attempts, and unusual financial activity.</p>
+                <div class="bg-gray-50 rounded-lg border border-gray-200 divide-y divide-gray-200">
+                    ${riskContent}
+                </div>
+                `
+            );
+        }
+
+        /** Renders Open Banking & SaaS Layer Design (5.1) */
+        function renderApiLayer() {
+            const apiEndpoints = [
+                { method: 'POST', endpoint: '/credit-score/api', description: 'Get Alternative Credit Score & XAI Explanation.', body: '{"digitalFootprint": "...", "upiData": "..."}', response: '{"score": 705, "explanation": "..."}' },
+                { method: 'POST', endpoint: '/risk-insight/api', description: 'Get Fraud Detection & Risk Insights.', body: '{"transactionId": "...", "kycData": "..."}', response: '{"risk_level": "Low", "anomalies_detected": 0}' },
+                { method: 'GET', method_color: 'bg-green-600', endpoint: '/fhi/api/{user_id}', description: 'Fetch Financial Health Index.', body: 'N/A', response: '{"fhi": 82, "recommendation": "..."}' },
+                { method: 'POST', endpoint: '/insights/api', description: 'Get personalized financial recommendations (Loans/SIPs).', body: '{"creditScore": 705, "income": 25000}', response: '{"loan_offer": "...", "sip_plan": "..."}' },
+            ];
+
+            const endpointList = apiEndpoints.map(api => `
+                <div class="bg-white p-5 rounded-lg border border-gray-200 shadow-sm transition-shadow hover:shadow-md">
+                    <div class="flex items-center space-x-3 mb-2">
+                        <span class="px-3 py-1 text-xs font-bold rounded ${api.method === 'GET' ? 'bg-green-100 text-green-700' : 'bg-indigo-100 text-indigo-700'}">${api.method}</span>
+                        <code class="font-mono text-sm text-gray-800 font-semibold">${api.endpoint}</code>
+                    </div>
+                    <p class="text-gray-600 mb-3">${api.description}</p>
+                    <div class="grid grid-cols-2 gap-4 text-xs">
+                        <div>
+                            <p class="font-bold text-gray-700 mb-1">Request Body (Example)</p>
+                            <code class="block bg-gray-100 p-2 rounded text-gray-600 overflow-x-auto">${api.body}</code>
+                        </div>
+                        <div>
+                            <p class="font-bold text-gray-700 mb-1">Response (Example)</p>
+                            <code class="block bg-gray-100 p-2 rounded text-gray-600 overflow-x-auto">${api.response}</code>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            return renderCard(
+                "Open Banking & SaaS Layer Design",
+                '<i data-lucide="database" class="w-6 h-6 text-indigo-600"></i>',
+                `
+                <p class="text-gray-600 mb-6">Designed as a service layer for banks and NBFCs (B2B potential) to consume alternative data insights via secure REST APIs.</p>
+                <div class="space-y-4">
+                    ${endpointList}
+                </div>
+                `
+            );
+        }
+
+        // --- Event Handlers & Initialization ---
+
+        function handleLiteracyClick(event) {
+            const target = event.target.closest('button');
+            if (!target) return;
+
+            if (target.classList.contains('lesson-button')) {
+                const lessonId = parseInt(target.getAttribute('data-lesson-id'));
+                setAppState({
+                    literacy: {
+                        selectedLessonId: lessonId,
+                        quizCompleted: false,
+                        correctAnswer: null,
+                        score: state.literacy.score // Keep score
+                    }
+                });
+            } else if (target.classList.contains('quiz-answer-button')) {
+                if (state.literacy.quizCompleted) return; // Prevent double clicking
+
+                const isCorrect = target.getAttribute('data-quiz-answer') === 'true';
+
+                // Update state for quiz result
+                const newScore = isCorrect ? state.literacy.score + 1 : state.literacy.score;
+
+                setAppState({
+                    literacy: {
+                        ...state.literacy,
+                        quizCompleted: true,
+                        correctAnswer: isCorrect,
+                        score: newScore
+                    }
+                });
+
+            } else if (target.getAttribute('data-action') === 'next-lesson') {
+                const nextLessonId = state.literacy.selectedLessonId + 1;
+                const nextLesson = LESSONS_DATA.find(l => l.id === nextLessonId);
+                if (nextLesson) {
+                    setAppState({
+                        literacy: {
+                            selectedLessonId: nextLessonId,
+                            quizCompleted: false,
+                            correctAnswer: null,
+                            score: state.literacy.score
+                        }
+                    });
+                }
+            } else if (target.getAttribute('data-action') === 'review-lesson') {
+                setAppState({
+                    literacy: {
+                        ...state.literacy,
+                        quizCompleted: false,
+                        correctAnswer: null
+                    }
+                });
+            }
+        }
+
+        /** Renders the main content based on currentView state */
+        function renderMainContent() {
+            const mainContent = document.getElementById('main-content');
+            let contentHtml = '';
+
+            // Update scores based on current data state before rendering
+            currentCreditScore = simulateCreditScore(userData).score;
+            creditExplanation = simulateCreditScore(userData).explanation;
+
+
+            switch (state.currentView) {
+                case VIEWS.DASHBOARD:
+                    contentHtml = renderDashboard();
+                    break;
+                case VIEWS.CREDIT:
+                    contentHtml = renderCreditScore();
+                    break;
+                case VIEWS.MENTOR:
+                    contentHtml = renderMentor();
+                    break;
+                case VIEWS.LITERACY:
+                    contentHtml = renderLiteracy();
+                    break;
+                case VIEWS.RISK:
+                    contentHtml = renderRisk();
+                    break;
+                case VIEWS.API:
+                    contentHtml = renderApiLayer();
+                    break;
+                default:
+                    contentHtml = '<h2 class="text-3xl font-bold">Welcome to FinSense AI</h2>';
+            }
+
+            // Set the main content area
+            mainContent.innerHTML = `
+                <h1 class="text-3xl font-extrabold text-gray-900 mb-8">${state.currentView}</h1>
+                ${contentHtml}
+            `;
+
+            // Feather/Lucide icons initialization
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+
+            // Attach event listeners after content is rendered
+            if (state.currentView === VIEWS.MENTOR) {
+                const sendButton = document.getElementById('send-button');
+                const chatInput = document.getElementById('chat-input');
+                const micButton = document.getElementById('mic-button');
+
+                if (sendButton) sendButton.onclick = () => handleMentorSend(false);
+                if (chatInput) chatInput.onkeydown = (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleMentorSend(false);
+                    }
+                };
+                
+                // Mic button handler is inline now (onclick="startListening()") but we need to ensure the state is correctly reflected
+                if (!SpeechRecognition) {
+                    if(micButton) micButton.disabled = true;
+                    document.getElementById('voice-status').textContent = "Voice Assistant not supported on this browser.";
+                }
+
+                // Make sure we stop speaking if user starts typing or leaves the chat
+                stopSpeaking();
+
+            } else if (state.currentView === VIEWS.LITERACY) {
+                mainContent.onclick = handleLiteracyClick;
+            } else {
+                // If leaving the mentor view, ensure TTS is stopped
+                stopSpeaking();
+            }
+        }
+
+        /** Renders the navigation sidebar */
+        function renderSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const navItems = [
+                { name: VIEWS.DASHBOARD, icon: 'home' },
+                { name: VIEWS.CREDIT, icon: 'trending-up' },
+                { name: VIEWS.MENTOR, icon: 'bot' },
+                { name: VIEWS.LITERACY, icon: 'graduation-cap' },
+                { name: VIEWS.RISK, icon: 'shield' },
+                { name: VIEWS.API, icon: 'database' },
+            ];
+
+            const itemsHtml = navItems.map((item) => `
+                <button
+                    data-view="${item.name}"
+                    class="view-button flex items-center px-4 py-2 rounded-lg transition-all duration-200 text-sm font-medium whitespace-nowrap
+                        ${state.currentView === item.name
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'
+                        }"
+                >
+                    <i data-lucide="${item.icon}" class="w-5 h-5 mr-3"></i>
+                    <span class="hidden md:inline">${item.name}</span>
+                    <span class="md:hidden">${item.name.split(' ')[0]}</span>
+                </button>
+            `).join('');
+
+            sidebar.innerHTML = `
+                <h1 class="text-2xl font-black text-indigo-700 mb-6 hidden md:block">${APP_NAME}</h1>
+                <div class="flex md:flex-col space-x-2 md:space-x-0 md:space-y-3 overflow-x-auto pb-2">
+                    ${itemsHtml}
+                </div>
+                <div class="mt-8 pt-4 border-t border-gray-100 hidden md:block">
+                    <p class="text-xs text-gray-400">User ID:</p>
+                    <p class="text-sm font-medium text-gray-700">${USER_ID}</p>
+                </div>
+            `;
+
+            // Attach event listener to navigation buttons
+            sidebar.querySelectorAll('.view-button').forEach(button => {
+                button.onclick = (e) => {
+                    setAppState({ currentView: e.currentTarget.getAttribute('data-view') });
+                };
+            });
+
+            // Feather/Lucide icons initialization
+            if (window.lucide) {
+                lucide.createIcons();
+            }
+        }
+
+        /** Main function to render all UI components */
+        function renderUI() {
+            // Make helper functions globally accessible for use in inline HTML handlers
+            window.handleInputUpdate = handleInputUpdate;
+            window.startListening = startListening;
+            window.handleLanguageChange = handleLanguageChange;
+
+            renderSidebar();
+            renderMainContent();
+            
+            // Re-initialize voices after a slight delay for all browsers to load them
+            if (synth) synth.getVoices(); 
+        }
+
+        // Initialize application on window load
+        window.onload = renderUI;
+    </script>
+</body>
+</html>
